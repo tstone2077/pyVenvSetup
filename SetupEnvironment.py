@@ -177,25 +177,24 @@ def SetupEnvironment(pythonPath=None, envLocation=None,
     if popen.wait():
         #an error occurred
         raise RuntimeError("Failed running process: %s" % " ".join(cmdArgs))
-    GenerateStartupScript()
+    GenerateStartupScript(envLocation)
     Cleanup()
 
 
-def GenerateStartupScript():
+def GenerateStartupScript(envLocation):
+    envRoot = os.path.basename(envLocation)
     if sys.platform == "win32":
-        startFile = os.path.join(SCRIPT_DIR, "startEnv.bat")
+        startFile = os.path.join(SCRIPT_DIR, "startEnv_%s.bat"%envRoot)
         if not os.path.exists(startFile):
             logging.debug("Creating startup script: %s" % startFile)
-            fileContent = r"""
-@setlocal
-@set ENV=venv
-@if not _%1_ == __ set ENV=%1
-@start %ENV%\Scripts\activate.bat
-            """
+
+            fileContent = "@setlocal\n"
+            fileContent += "@set ENV=%s\n"%envRoot
+            fileContent += "@if not _%1_ == __ set ENV=%1\n"
+            fileContent += "@start %ENV%\Scripts\\activate.bat\n"
+
             with open(startFile,"w") as f:
                 f.write(fileContent)
-        
-            
     else:
         if not os.path.exists("startEnv.sh"):
             raise NotImplementedError()
@@ -207,12 +206,6 @@ def Cleanup():
     for file in glob.iglob(globExpression):
         logging.debug("Removing %s" % file)
         os.unlink(file)
-    pycacheDir = os.path.join(SCRIPT_DIR,"__pycache__")
-    if os.path.isdir(pycacheDir):
-        logging.debug("Removing %s" % pycacheDir)
-        shutil.rmtree(pycacheDir)
-
-    #remove __pycache__
 
 
 def GetBinDir():
@@ -224,10 +217,10 @@ def GetBinDir():
 
 
 def InstallEnvironment(envLocation, pipPackageFile):
-    import pip
     logging.debug("Installing...")
     activatePath = os.path.join(envLocation, GetBinDir(), "activate_this.py")
     execfile(activatePath, dict(__file__=activatePath))
+    import pip
     if pipPackageFile is None:
         pipPackageFile = DEFAULT_PIP_PACKAGE_FILE
     packages = []
@@ -235,8 +228,10 @@ def InstallEnvironment(envLocation, pipPackageFile):
         logging.debug("Reading Packages from: %s" % pipPackageFile)
         with open(pipPackageFile) as f:
             for line in f.readlines():
-                logging.debug("Found Package: %s" % line.rstrip("\n"))
-                packages.append(line.rstrip("\n"))
+                if line.strip().find("#") != 0 and \
+                   line.strip().find("::") != 0:
+                    logging.debug("Found Package: %s" % line.rstrip("\n"))
+                    packages.append(line.rstrip("\n"))
         if len(packages) > 0:
             cmdArgs = ["install"] + packages
             logging.debug("Pip command: %s" % " ".join(cmdArgs))
